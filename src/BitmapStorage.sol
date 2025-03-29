@@ -1,31 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
-
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-
-contract TOKENSIGNER is ERC20("TokenSig", "TSIG") {
-    address public immutable owner;
-
-    constructor() {
-        owner = msg.sender;
-    }
-
-    function mintWithSignature(address y, uint256 amount, bytes memory signature) public {
-        cverify(y, amount, signature);
-        _mint(y, amount);
-    }
-
-    function cverify(address x, uint256 y, bytes memory sig) internal view {
-        bytes32 messageHash = keccak256(abi.encodePacked(x, y));
-        bytes32 ethSignedMessageHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
-        );
-        address signer = ECDSA.recover(ethSignedMessageHash, sig);
-        
-        if (signer != owner) revert("NOMINT");
-    }
-}
+pragma solidity ^0.8.28;
 
 contract BitmapStorage {
     uint256 private bitmap;

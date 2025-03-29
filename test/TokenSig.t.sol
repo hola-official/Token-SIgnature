@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-// Import Foundry's Test library and OpenZeppelin's contracts
 import "forge-std/Test.sol";
-import "../src/TokenSig.sol";
+import "../src/TokenSig.sol"; // Adjust the path based on your project structure
 
 contract TOKENSIGNERTest is Test {
     TOKENSIGNER token;
@@ -16,17 +15,17 @@ contract TOKENSIGNERTest is Test {
     function setUp() public {
         // Generate addresses and private keys for testing
         ownerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-        owner = vm.addr(ownerPrivateKey); // Derive the owner's address
-        user1 = address(0x1); // A user who will receive tokens
-        user2 = address(0x2); // Another user for testing
+        owner = vm.addr(ownerPrivateKey);
+        user1 = address(0x1);
+        user2 = address(0x2);
 
         // Deploy the TOKENSIGNER contract
-        vm.prank(owner); // Set the msg.sender as the owner for deployment
-        token = new TOKENSIGNER(); // Note: ERC20 constructor requires name and symbol, adjust if needed
+        vm.prank(owner);
+        token = new TOKENSIGNER();
     }
 
     // Helper function to generate a signature for the (address, amount) pair
-    function signMessage(address _address, uint256 _amount, uint256 _privateKey) internal view returns (bytes memory) {
+    function signMessage(address _address, uint256 _amount, uint256 _privateKey) internal pure returns (bytes memory) {
         // Create the hash of the address and amount
         bytes32 messageHash = keccak256(abi.encodePacked(_address, _amount));
         // Add the Ethereum signed message prefix
@@ -39,68 +38,94 @@ contract TOKENSIGNERTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    // Test successful minting with a valid signature
-    function testMintWithValidSignature() public {
-        uint256 amount = 1000 * 10**18; // 1000 tokens (assuming 18 decimals)
-        // Generate a valid signature from the owner
+    function test_InitialState() public view {
+        assertEq(token.name(), "TokenSig", "Token name should be TokenSig");
+        assertEq(token.symbol(), "TSIG", "Token symbol should be TSIG");
+        assertEq(token.owner(), owner, "Owner should be set correctly");
+        assertEq(token.totalSupply(), 0, "Initial supply should be 0");
+    }
+
+    function test_MintWithValidSignature() public {
+        uint256 amount = 1000 * 10**18;
         bytes memory signature = signMessage(user1, amount, ownerPrivateKey);
 
-        // Call mintWithSignature as user1
         vm.prank(user1);
         token.mintWithSignature(user1, amount, signature);
 
-        // Verify the balance of user1
         assertEq(token.balanceOf(user1), amount, "User1 should have the minted tokens");
+        assertEq(token.totalSupply(), amount, "Total supply should be updated");
     }
 
-    // Test minting with an invalid signature (wrong signer)
-    function testFailMintWithInvalidSignature() public {
+    function test_MintMultipleTimes() public {
+        uint256 amount1 = 1000 * 10**18;
+        uint256 amount2 = 2000 * 10**18;
+        
+        bytes memory signature1 = signMessage(user1, amount1, ownerPrivateKey);
+        bytes memory signature2 = signMessage(user1, amount2, ownerPrivateKey);
+
+        vm.prank(user1);
+        token.mintWithSignature(user1, amount1, signature1);
+        
+        vm.prank(user1);
+        token.mintWithSignature(user1, amount2, signature2);
+
+        assertEq(token.balanceOf(user1), amount1 + amount2, "User1 should have both amounts");
+        assertEq(token.totalSupply(), amount1 + amount2, "Total supply should be updated");
+    }
+
+    function test_MintToDifferentUsers() public {
+        uint256 amount1 = 1000 * 10**18;
+        uint256 amount2 = 2000 * 10**18;
+        
+        bytes memory signature1 = signMessage(user1, amount1, ownerPrivateKey);
+        bytes memory signature2 = signMessage(user2, amount2, ownerPrivateKey);
+
+        vm.prank(user1);
+        token.mintWithSignature(user1, amount1, signature1);
+        
+        vm.prank(user2);
+        token.mintWithSignature(user2, amount2, signature2);
+
+        assertEq(token.balanceOf(user1), amount1, "User1 should have correct amount");
+        assertEq(token.balanceOf(user2), amount2, "User2 should have correct amount");
+        assertEq(token.totalSupply(), amount1 + amount2, "Total supply should be updated");
+    }
+
+    function test_RevertWhen_InvalidSignature() public {
         uint256 amount = 1000 * 10**18;
-        // Generate a signature with a different private key (not the owner)
-        uint256 wrongPrivateKey = 0xB0B; // A different private key
+        uint256 wrongPrivateKey = 0xB0B;
         bytes memory invalidSignature = signMessage(user1, amount, wrongPrivateKey);
 
-        // Expect the transaction to revert with "NOMINT"
         vm.prank(user1);
         vm.expectRevert("NOMINT");
         token.mintWithSignature(user1, amount, invalidSignature);
     }
 
-    // Test minting with a signature for a different address
-    function testFailMintWithWrongAddress() public {
+    function test_RevertWhen_WrongAddress() public {
         uint256 amount = 1000 * 10**18;
-        // Generate a valid signature for user1
         bytes memory signature = signMessage(user1, amount, ownerPrivateKey);
 
-        // Try to mint for user2 using user1's signature
         vm.prank(user2);
         vm.expectRevert("NOMINT");
         token.mintWithSignature(user2, amount, signature);
     }
 
-    // Test minting with a signature for a different amount
-    function testFailMintWithWrongAmount() public {
+    function test_RevertWhen_WrongAmount() public {
         uint256 amount = 1000 * 10**18;
-        // Generate a valid signature for a specific amount
         bytes memory signature = signMessage(user1, amount, ownerPrivateKey);
 
-        // Try to mint a different amount using the same signature
         uint256 wrongAmount = 2000 * 10**18;
         vm.prank(user1);
         vm.expectRevert("NOMINT");
         token.mintWithSignature(user1, wrongAmount, signature);
     }
 
-    // Test that the total supply updates correctly after minting
-    function testTotalSupplyAfterMint() public {
+    function test_RevertWhen_EmptySignature() public {
         uint256 amount = 1000 * 10**18;
-        bytes memory signature = signMessage(user1, amount, ownerPrivateKey);
+        bytes memory emptySignature = "";
 
-        // Mint tokens
         vm.prank(user1);
-        token.mintWithSignature(user1, amount, signature);
-
-        // Verify the total supply
-        assertEq(token.totalSupply(), amount, "Total supply should equal the minted amount");
+        vm.expectRevert();
+        token.mintWithSignature(user1, amount, emptySignature);
     }
 }
